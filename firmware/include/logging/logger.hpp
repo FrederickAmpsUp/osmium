@@ -67,9 +67,11 @@ template<typename... Args>
 void Logger::log(Logger::Level level, const char *fmt, Args... args) {
   if (this->num_sinks == 0 || level < this->level) return;
 
+  // first step just does the formatting specified by the caller
   char msg_buf[LOGGER_MAX_SIZE];
   snprintf(msg_buf, sizeof(msg_buf), fmt, args...);
 
+  // second step takes the result of that and adds the timestamp and level
   char log_buf[LOGGER_MAX_SIZE];
   snprintf(log_buf, sizeof(log_buf), "[%lu] [%s] %s", millis(), Logger::level_string(level), msg_buf);
 
