@@ -1,0 +1,22 @@
+CompileFlags:
+  Add:
+    - -D__XTENSA__=1
+    - --target=riscv32 # what the hell
+    - -Wno-unknown-argument
+    - -Wno-unused-command-line-argument
+
+  Remove:
+    - -mlongcalls
+    - -fstrict-volatile-bitfields
+    - -fno-jump-tables
+    - -fno-tree-switch-conversion
+Diagnostics:
+  Suppress: [ # supress inline asm errors because arduino devs decided inline assembly
+              # in header files was cool without considering that someone might be
+              # using riscv for code analysis because it's the only fucking thing that
+              # works for some reason
+    "asm_invalid_output_constraint",
+    "asm_invalid_input_constraint",
+    "invalid_asm_value_for_constraint",
+    "clang-diagnostic-inline-asm"
+  ]
