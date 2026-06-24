@@ -1,19 +1,20 @@
 #include <Arduino.h>
 #include "logging/logger.hpp"
-#include "logging/serial_sink.hpp"
+#include "logging/stream_sink.hpp"
 
 using namespace osmium;
 
 void setup() {
   static Logger &log = Logger::global();
-  static SerialSink ser_sink;
+  static StreamSink ser_sink = { Serial };
 
+  Serial.begin(115200); // change me
+  
   log.set_level(LogLevel::TRACE);
   ser_sink.set_level(LogLevel::TRACE);
 
   log.add_sink(ser_sink);
 
-  Serial.begin(115200); // change me
   log.debug("ready");
 }
 
