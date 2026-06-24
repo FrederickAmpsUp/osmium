@@ -12,6 +12,8 @@ static const size_t LOGGER_MAX_SIZE = 256;
 
 class Logger {
 public:
+  Logger() = default;
+
   Logger(const Logger &) = delete;  // delete copy constructors
   Logger& operator=(const Logger &) = delete;
 
@@ -46,6 +48,8 @@ public:
 
   static Logger &global();
 private:
+  void write(LogLevel level, const char *str);
+
   LogLevel level = LOG_LEVEL_DEFAULT;
 
   LogSink *sinks[LOGGER_MAX_SINKS];
@@ -68,12 +72,13 @@ void Logger::log(LogLevel level, const char *fmt, Args... args) {
   char msg_buf[LOGGER_MAX_SIZE];
   snprintf(msg_buf, sizeof(msg_buf), fmt, args...);
 
-  // second step takes the result of that and adds the timestamp and level
-  char log_buf[LOGGER_MAX_SIZE];
-  snprintf(log_buf, sizeof(log_buf), "[%lu] [%s] %s", millis(), Logger::level_string(level), msg_buf);
+  this->write(level, msg_buf);
+}
 
-  for (size_t i = 0; i < this->num_sinks; ++i) {
-    if (this->sinks[i]) this->sinks[i]->log(level, log_buf);
-  }
+template<>
+inline void Logger::log(LogLevel level, const char *fmt) {
+  if (this->num_sinks == 0 || level < this->level) return;
+
+  this->write(level, fmt);
 }
 } // namespace osmium
