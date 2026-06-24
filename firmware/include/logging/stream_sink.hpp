@@ -1,15 +1,17 @@
 #pragma once
 
 #include "log_sink.hpp"
+#include <Stream.h>
 
 namespace osmium {
 
-class SerialSink : public LogSink {
+class StreamSink : public LogSink {
 public:
-  SerialSink() = default;
+  StreamSink(Stream &stream);
 
-  virtual ~SerialSink() override = default;
+  virtual ~StreamSink() override = default;
 private:
+  Stream &stream;
   virtual void write(const char *str) override;
 };
 
