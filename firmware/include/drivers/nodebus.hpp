@@ -10,6 +10,9 @@ constexpr size_t NODEBUS_SOF_SIZE = sizeof(NODEBUS_SOF);
 
 constexpr size_t NODEBUS_PAYLOAD_MAX_SIZE = 256;
 
+constexpr uint16_t NODEBUS_CRC_INIT = 0xFFFF;
+constexpr uint16_t NODEBUS_CRC_POLY = 0x1021;
+
 constexpr uint8_t NODEBUS_PACKET_VERSION_V1 = 0x01;
 
 uint16_t update_crc16(uint16_t crc, uint8_t data);

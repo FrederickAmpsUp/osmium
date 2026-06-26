@@ -37,7 +37,7 @@ NodebusParser::Result NodebusParser::update(Stream &stream) {
           this->bytes_read = 0;
           this->packet_id = 0;
           this->payload_size = 0;
-          this->computed_crc = 0xFFFF;
+          this->computed_crc = NODEBUS_CRC_INIT;
         }
       break;
       case READ_HEADER:
