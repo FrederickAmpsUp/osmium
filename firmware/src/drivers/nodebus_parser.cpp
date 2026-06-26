@@ -23,14 +23,14 @@ NodebusParser::Result NodebusParser::update(Stream &stream) {
 
     switch (this->state) {
       case WAIT_SOF:
-        if (byte == SOF[this->bytes_read])
+        if (byte == NODEBUS_SOF[this->bytes_read])
           this->bytes_read++; // continue reading if the byte matches the nth byte of SOF
-        else if (byte == SOF[0])
+        else if (byte == NODEBUS_SOF[0])
           this->bytes_read = 1; // restart from 1 if the byte matches the first byte of SOF
         else
           this->bytes_read = 0; // restart from 0 if the byte does not match
 
-        if (this->bytes_read == SOF_SIZE) {
+        if (this->bytes_read == NODEBUS_SOF_SIZE) {
           log.trace("SOF matched, reading packet.");
           this->state = READ_HEADER;
 
@@ -50,17 +50,31 @@ NodebusParser::Result NodebusParser::update(Stream &stream) {
             break;
           }
           this->bytes_read++;
-        } else {
-          this->payload_size = byte + 1;
-          if (this->payload_size > PAYLOAD_MAX_SIZE) {
-            log.warn("Payload oversized at %d bytes.", this->payload_size);
+        } else if (this->bytes_read == 1) {
+          this->packet_version = byte;
+          if (this->packet_version > NODEBUS_PACKET_VERSION_V1) {
+            log.debug("Ignoring packet with version %d.", this->packet_version);
+            this->state = WAIT_SOF;
+            this->bytes_read = 0;
+            break;
           }
-          this->state = READ_PAYLOAD;
-          this->bytes_read = 0;
+          this->bytes_read++;
+        } else {
+          this->payload_size |= (byte & 0x7F) << (this->bytes_read * 7 - 14);
+          if (!(byte & 0x80)) {
+            if (this->payload_size > NODEBUS_PAYLOAD_MAX_SIZE) {
+              log.warn("Payload oversized at %d bytes.", this->payload_size);
+            }
+            // don't read empty payload
+            this->state = (this->payload_size > 0) ? READ_PAYLOAD : READ_CRC;
+            this->bytes_read = 0;
+          } else {
+            this->bytes_read++;
+          }
         }
       break;
       case READ_PAYLOAD:
-        if (this->bytes_read < PAYLOAD_MAX_SIZE)
+        if (this->bytes_read < NODEBUS_PAYLOAD_MAX_SIZE)
           this->payload[this->bytes_read] = byte;
         if (this->bytes_read >= this->payload_size - 1) {
           this->state = READ_CRC;
@@ -96,21 +110,6 @@ NodebusParser::Result NodebusParser::update(Stream &stream) {
 const uint8_t *NodebusParser::get_payload(uint8_t *size) const {
   if (size) *size = this->payload_size;
   return this->payload;
-}
-
-// stupid language
-constexpr uint8_t NodebusParser::SOF[];
-
-uint16_t NodebusParser::update_crc16(uint16_t crc, uint8_t data) {
-  crc ^= ((uint16_t)data << 8);
-  for (uint8_t i = 0; i < 8; i++) {
-    if (crc & 0x8000) {
-      crc = (crc << 1) ^ 0x1021; // 0x1021 is the standard CCITT polynomial
-    } else {
-      crc <<= 1;
-    }
-  }
-  return crc;
 }
 
 } // namespace osmium

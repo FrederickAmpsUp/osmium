@@ -1,13 +1,21 @@
+import unittest
 import serial
 import time
 import threading
 
-# Configure to match your MCU's serial settings
-SERIAL_PORT = "/dev/ttyUSB0"  # Change to '/dev/ttyUSB0' or similar on Linux/Mac
+SERIAL_PORT = "/dev/ttyUSB0"  # Adjust to your platform Target Port
 BAUD_RATE = 115200
 
+# Constants matching MCU header parameters
+NODEBUS_SOF = b"\xDE\xAD\xBE\xEF"
+NODE_ID_TARGET = b"\x01"
+VERSION_V1 = b"\x01"
+VERSION_V2 = b"\x02"
+
+NODEBUS_PAYLOAD_MAX_SIZE = 256  # Adjust if your buffer size differs
+
 def crc16_ccitt(data: bytes) -> int:
-    """Computes the CRC-16-CCITT (Polynomial: 0x1021, Init: 0xFFFF) over data bytes."""
+    """Computes pure CRC-16-CCITT sequentially over data bytes."""
     crc = 0xFFFF
     for byte in data:
         crc ^= (byte << 8)
@@ -18,81 +26,139 @@ def crc16_ccitt(data: bytes) -> int:
                 crc = (crc << 1) & 0xFFFF
     return crc
 
-def serial_reader(ser):
-    """Continuously reads and prints lines from the MCU in the background."""
-    while ser.is_open:
-        try:
-            if ser.in_waiting > 0:
-                line = ser.readline().decode('utf-8', errors='ignore').strip()
-                if line:
-                    print(f"[MCU]: {line}")
-        except (serial.SerialException, OSError) as e:
-            if getattr(e, 'errno', None) == 9 or "closed" in str(e).lower():
-                break
-            print(f"\nReader error: {e}")
-            break
+def encode_varint(value: int) -> bytes:
+    """Encodes an integer into a Base-128 Varint."""
+    if value == 0:
+        return b"\x00"
+    varint_bytes = bytearray()
+    while value > 0x7F:
+        varint_bytes.append((value & 0x7F) | 0x80)
+        value >>= 7
+    varint_bytes.append(value & 0x7F)
+    return bytes(varint_bytes)
 
-try:
-    # Open the serial port
-    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-    time.sleep(2)  # Wait for MCU to reset after opening port
-    print(f"Connected to {SERIAL_PORT} at {BAUD_RATE} baud.")
 
-    # Start the background reader thread
-    reader_thread = threading.Thread(target=serial_reader, args=(ser,), daemon=True)
-    reader_thread.start()
+class TestNodebusParser(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        """Open serial port connection once for the entire test suite."""
+        cls.ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.5)
+        time.sleep(2.0)  # Safe bootloader timeout delay
+        print(f"\n[INIT] Connected to {SERIAL_PORT} for validation matrix.")
 
-    # Shared framing constants
-    sof = b"\xDE\xAD\xBE\xEF"
-    node_id = b"\x01"
-    null_terminator = b"\x00"
+    @classmethod
+    def tearDownClass(cls):
+        """Ensure clean close of hardware resource on termination."""
+        if cls.ser.is_open:
+            cls.ser.close()
+            print("\n[TERM] Closed serial communication profile.")
 
-    # --- Test 1: Standard Valid Packet with Valid CRC ---
-    # Payload: "Hello" (5) + \x00 (1) = 6 bytes total. size_byte = 6 - 1 = 5
-    size_byte_1 = b"\x05"  
-    payload_1 = b"Hello" + null_terminator
-    
-    # CRITICAL: The MCU computes the CRC starting from the header (ID + Size) through the payload
-    protected_data_1 = node_id + size_byte_1 + payload_1
-    crc_1 = crc16_ccitt(protected_data_1)
-    crc_bytes_1 = crc_1.to_bytes(2, byteorder='big') # Match big-endian sequential read
-    
-    valid_packet = sof + protected_data_1 + crc_bytes_1
+    def setUp(self):
+        """Flush the MCU's hardware RX/TX queues before running each test window."""
+        self.ser.reset_input_buffer()
+        self.ser.reset_output_buffer()
+        time.sleep(0.1)
 
-    print("\nSending Test 1: Valid Packet with Matching CRC...")
-    print(f"Bytes sent: {valid_packet.hex().upper()}")
-    ser.write(valid_packet)
-    time.sleep(2)
+    def send_and_listen(self, packet_bytes: bytes, listen_time: float = 0.5) -> list:
+        """Sends raw bytes, prints out raw transmission data, and logs MCU responses."""
+        print(f"\n[TX] Writing bytes: {packet_bytes.hex().upper()}")
+        self.ser.write(packet_bytes)
+        time.sleep(listen_time)
+        
+        lines = []
+        while self.ser.in_waiting > 0:
+            line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+            if line:
+                print(f"  [MCU LOG]: {line}")
+                lines.append(line)
+        return lines
 
-    # --- Test 2: Overlapping Noise Packet with Valid CRC ---
-    # Testing that your 'else if' fallback works AND the subsequent CRC checks out
-    size_byte_2 = b"\x02"  # "Hi" (2) + \x00 (1) = 3 bytes total. size_byte = 3 - 1 = 2
-    payload_2 = b"Hi" + null_terminator
-    
-    protected_data_2 = node_id + size_byte_2 + payload_2
-    crc_2 = crc16_ccitt(protected_data_2)
-    crc_bytes_2 = crc_2.to_bytes(2, byteorder='big')
-    
-    junk_overlap = b"\xDE\xAD\xDE\xAD\xBE\xEF" # Double DEAD sequence
-    overlap_packet = junk_overlap + protected_data_2 + crc_bytes_2
+    def test_01_valid_standard_packet(self):
+        """Verifies standard payload serialization parses and executes correctly."""
+        print("\n--- Running Test 1: Valid Standard Packet ---")
+        payload = b"Hello\x00"
+        varint_size = encode_varint(len(payload))
+        
+        protected = NODE_ID_TARGET + VERSION_V1 + varint_size + payload
+        crc_bytes = crc16_ccitt(protected).to_bytes(2, byteorder='big')
+        packet = NODEBUS_SOF + protected + crc_bytes
 
-    print("\nSending Test 2: Overlapping SOF Packet with Matching CRC...")
-    print(f"Bytes sent: {overlap_packet.hex().upper()}")
-    ser.write(overlap_packet)
-    time.sleep(2)
+        logs = self.send_and_listen(packet)
+        
+        self.assertTrue(any("SOF matched" in l for l in logs), "Parser failed to lock onto frame sequence.")
+        self.assertFalse(any("CRC mismatch" in l for l in logs), "Valid CRC calculation flag rejected.")
 
-    # --- Test 3: Corrupted Packet to Verify Checksum Rejection ---
-    # We will send the exact same packet as Test 1, but deliberately break the CRC
-    bad_crc_bytes = b"\x42\x42" 
-    corrupted_packet = sof + protected_data_1 + bad_crc_bytes
+    def test_02_empty_payload_packet(self):
+        """Validates that a 0-byte payload varint cleanly passes straight to CRC resolution."""
+        print("\n--- Running Test 2: Empty Payload Packet ---")
+        payload = b""
+        varint_size = encode_varint(len(payload))
+        
+        protected = NODE_ID_TARGET + VERSION_V1 + varint_size + payload
+        crc_bytes = crc16_ccitt(protected).to_bytes(2, byteorder='big')
+        packet = NODEBUS_SOF + protected + crc_bytes
 
-    print("\nSending Test 3: Intentional Bad CRC Packet (Should trigger log.warn)...")
-    print(f"Bytes sent: {corrupted_packet.hex().upper()}")
-    ser.write(corrupted_packet)
-    time.sleep(2)
+        logs = self.send_and_listen(packet)
+        self.assertTrue(any("SOF matched" in l for l in logs))
+        self.assertFalse(any("CRC mismatch" in l for l in logs))
 
-    ser.close()
-    print("\nTesting complete.")
+    def test_03_random_noise_preceding_sof(self):
+        """Validates state recovery when stream starts with garbage bytes before valid SOF."""
+        print("\n--- Running Test 3: Random Noise Before SOF ---")
+        payload = b"ValidData\x00"
+        varint_size = encode_varint(len(payload))
+        
+        protected = NODE_ID_TARGET + VERSION_V1 + varint_size + payload
+        crc_bytes = crc16_ccitt(protected).to_bytes(2, byteorder='big')
+        valid_packet = NODEBUS_SOF + protected + crc_bytes
+        
+        noise = b"\xFF\x00\xAA\x55\xDE\xAD\xDE\xAD" 
+        dirty_stream = noise + valid_packet
 
-except serial.SerialException as e:
-    print(f"Error opening or writing to serial port: {e}")
+        logs = self.send_and_listen(dirty_stream)
+        self.assertTrue(any("SOF matched" in l for l in logs), "Parser failed to recover frame locking after line noise injection.")
+        self.assertFalse(any("CRC mismatch" in l for l in logs))
+
+    def test_04_intentional_bad_crc(self):
+        """Ensures frame integrity traps execution if data footprint modified or corrupt."""
+        print("\n--- Running Test 4: Invalid CRC Injection ---")
+        payload = b"SecurePayload\x00"
+        varint_size = encode_varint(len(payload))
+        
+        protected = NODE_ID_TARGET + VERSION_V1 + varint_size + payload
+        bad_crc_bytes = b"\x42\x42"  
+        packet = NODEBUS_SOF + protected + bad_crc_bytes
+
+        logs = self.send_and_listen(packet)
+        self.assertTrue(any("CRC mismatch" in l for l in logs), "Parser failed to safely reject corrupted execution array.")
+
+    def test_05_oversized_payload_boundary(self):
+        """Validates log warnings trip gracefully when payload declaration violates buffer architecture."""
+        print("\n--- Running Test 5: Oversized Payload ---")
+        oversized_len = NODEBUS_PAYLOAD_MAX_SIZE + 10
+        payload = b"A" * oversized_len
+        varint_size = encode_varint(len(payload))
+        
+        protected = NODE_ID_TARGET + VERSION_V1 + varint_size + payload
+        crc_bytes = crc16_ccitt(protected).to_bytes(2, byteorder='big')
+        packet = NODEBUS_SOF + protected + crc_bytes
+
+        logs = self.send_and_listen(packet)
+        self.assertTrue(any("Oversized" in l or "oversized" in l for l in logs), "No defensive warn triggered when processing overflow length array.")
+
+    def test_06_unsupported_version_rejection(self):
+        """Asserts that packets with higher version profiles are discarded cleanly."""
+        print("\n--- Running Test 6: Invalid Protocol Version ---")
+        payload = b"FutureFormat\x00"
+        varint_size = encode_varint(len(payload))
+        
+        protected = NODE_ID_TARGET + VERSION_V2 + varint_size + payload
+        crc_bytes = crc16_ccitt(protected).to_bytes(2, byteorder='big')
+        packet = NODEBUS_SOF + protected + crc_bytes
+
+        logs = self.send_and_listen(packet)
+        self.assertTrue(any("Ignoring" in l or "version" in l for l in logs), "Parser did not safely exit stream execution upon illegal version read.")
+
+
+if __name__ == "__main__":
+    unittest.main()
