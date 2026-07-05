@@ -9,6 +9,7 @@ BAUD_RATE = 115200
 # Constants matching MCU header parameters
 NODEBUS_SOF = b"\xDE\xAD\xBE\xEF"
 NODE_ID_TARGET = b"\x01"
+NODE_ID_SOURCE = b"\x02"
 VERSION_V1 = b"\x01"
 VERSION_V2 = b"\x02"
 
@@ -79,7 +80,7 @@ class TestNodebusParser(unittest.TestCase):
         payload = b"Hello\x00"
         varint_size = encode_varint(len(payload))
         
-        protected = NODE_ID_TARGET + VERSION_V1 + varint_size + payload
+        protected = VERSION_V1 + NODE_ID_TARGET + NODE_ID_SOURCE + varint_size + payload
         crc_bytes = crc16_ccitt(protected).to_bytes(2, byteorder='big')
         packet = NODEBUS_SOF + protected + crc_bytes
 
@@ -94,7 +95,7 @@ class TestNodebusParser(unittest.TestCase):
         payload = b""
         varint_size = encode_varint(len(payload))
         
-        protected = NODE_ID_TARGET + VERSION_V1 + varint_size + payload
+        protected = VERSION_V1 + NODE_ID_TARGET + NODE_ID_SOURCE + varint_size + payload
         crc_bytes = crc16_ccitt(protected).to_bytes(2, byteorder='big')
         packet = NODEBUS_SOF + protected + crc_bytes
 
@@ -108,7 +109,7 @@ class TestNodebusParser(unittest.TestCase):
         payload = b"ValidData\x00"
         varint_size = encode_varint(len(payload))
         
-        protected = NODE_ID_TARGET + VERSION_V1 + varint_size + payload
+        protected = VERSION_V1 + NODE_ID_TARGET + NODE_ID_SOURCE + varint_size + payload
         crc_bytes = crc16_ccitt(protected).to_bytes(2, byteorder='big')
         valid_packet = NODEBUS_SOF + protected + crc_bytes
         
@@ -125,7 +126,7 @@ class TestNodebusParser(unittest.TestCase):
         payload = b"SecurePayload\x00"
         varint_size = encode_varint(len(payload))
         
-        protected = NODE_ID_TARGET + VERSION_V1 + varint_size + payload
+        protected = VERSION_V1 + NODE_ID_TARGET + NODE_ID_SOURCE + varint_size + payload
         bad_crc_bytes = b"\x42\x42"  
         packet = NODEBUS_SOF + protected + bad_crc_bytes
 
@@ -139,7 +140,7 @@ class TestNodebusParser(unittest.TestCase):
         payload = b"A" * oversized_len
         varint_size = encode_varint(len(payload))
         
-        protected = NODE_ID_TARGET + VERSION_V1 + varint_size + payload
+        protected = VERSION_V1 + NODE_ID_TARGET + NODE_ID_SOURCE + varint_size + payload
         crc_bytes = crc16_ccitt(protected).to_bytes(2, byteorder='big')
         packet = NODEBUS_SOF + protected + crc_bytes
 
@@ -152,7 +153,7 @@ class TestNodebusParser(unittest.TestCase):
         payload = b"FutureFormat\x00"
         varint_size = encode_varint(len(payload))
         
-        protected = NODE_ID_TARGET + VERSION_V2 + varint_size + payload
+        protected = VERSION_V2 + NODE_ID_TARGET + NODE_ID_SOURCE + varint_size + payload
         crc_bytes = crc16_ccitt(protected).to_bytes(2, byteorder='big')
         packet = NODEBUS_SOF + protected + crc_bytes
 
