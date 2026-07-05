@@ -42,15 +42,6 @@ NodebusParser::Result NodebusParser::update(Stream &stream) {
       break;
       case READ_HEADER:
         if (this->bytes_read == 0) {
-          this->packet_id = byte;
-          if (this->packet_id && this->id != this->packet_id) {
-            log.debug("Ignoring packet addressed %d.", this->packet_id);
-            this->state = WAIT_SOF;
-            this->bytes_read = 0;
-            break;
-          }
-          this->bytes_read++;
-        } else if (this->bytes_read == 1) {
           this->packet_version = byte;
           if (this->packet_version > NODEBUS_PACKET_VERSION_V1) {
             log.debug("Ignoring packet with version %d.", this->packet_version);
@@ -59,8 +50,20 @@ NodebusParser::Result NodebusParser::update(Stream &stream) {
             break;
           }
           this->bytes_read++;
+        } else if (this->bytes_read == 1) {
+          this->packet_id = byte;
+          if (this->packet_id && this->id != this->packet_id) {
+            log.debug("Ignoring packet addressed %d.", this->packet_id);
+            this->state = WAIT_SOF;
+            this->bytes_read = 0;
+            break;
+          }
+          this->bytes_read++;
+        } else if (this->bytes_read == 2) {
+          this->sender_id = byte;
+          this->bytes_read++;
         } else {
-          this->payload_size |= (byte & 0x7F) << (this->bytes_read * 7 - 14);
+          this->payload_size |= (byte & 0x7F) << (this->bytes_read * 7 - 21);
           if (!(byte & 0x80)) {
             if (this->payload_size > NODEBUS_PAYLOAD_MAX_SIZE) {
               log.warn("Payload oversized at %d bytes.", this->payload_size);

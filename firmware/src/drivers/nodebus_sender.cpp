@@ -3,6 +3,9 @@
 
 namespace osmium {
 
+NodebusSender::NodebusSender(uint8_t id) : id(id) {
+}
+
 static inline void send_byte(uint16_t &crc, Stream &stream, uint8_t byte) {
   crc = update_crc16(crc, byte);
   stream.write(byte);
@@ -19,6 +22,9 @@ void NodebusSender::send(Stream &stream, uint8_t target_id, const uint8_t *paylo
 
   // send target
   send_byte(crc, stream, target_id);
+
+  // send source
+  send_byte(crc, stream, this->id);
 
   // copy because we need payload_size later
   uint16_t packet_payload_size = payload_size;
