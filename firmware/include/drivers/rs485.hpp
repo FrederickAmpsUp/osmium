@@ -9,7 +9,7 @@ class RS485 : public Stream {
 public:
   RS485(int rx, int tx, int dd, int port=1);
 
-  void begin();
+  void begin(unsigned long baud = 115200);
 
   virtual int available() override { return this->hardware_serial.available(); }
   virtual int read() override { return this->hardware_serial.read(); }
