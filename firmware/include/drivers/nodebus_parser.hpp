@@ -12,6 +12,7 @@ public:
   NodebusParser(uint8_t id);
 
   enum Result {
+    OVERISZE_ERR = -3,
     CRC_ERR = -2,
     WAITING = -1,
     PARSING =  0,

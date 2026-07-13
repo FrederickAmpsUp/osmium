@@ -1,4 +1,5 @@
 #include "drivers/nodebus_parser.hpp"
+#include "drivers/nodebus.hpp"
 #include "logging/logger.hpp"
 
 namespace osmium {
@@ -97,6 +98,8 @@ NodebusParser::Result NodebusParser::update(Stream &stream) {
           this->state = WAIT_SOF;
 
           if (this->packet_crc == this->computed_crc) {
+            if (this->payload_size > NODEBUS_PAYLOAD_MAX_SIZE)
+              return OVERISZE_ERR;
             return READY;
           } else {
             log.warn("CRC mismatch! Computed: 0x%04X, Received: 0x%04X", this->computed_crc, this->packet_crc);

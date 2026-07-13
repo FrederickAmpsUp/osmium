@@ -8,19 +8,38 @@
 #include <freertos/task.h>
 #include <freertos/ringbuf.h>
 
+// TODO: refactor await_send_request machinery to be more modular
+// so that it can be used for ACKs
+
+// what the hell
+
+/*** Transport Layer Block Diagram ***
+
+*** Requester ***
+
+await_send_request()           metadata.version=V1 .status=REQUEST                                                                                                                              
+await_transaction() -> allocate_promise() -> send() -> notifyTake() --------------------------------------------------------------------------------------------------------------------------- return
+
+tick()                                                                                                                                   retreive promise -> memcpy(promise.data) -> notifyGive
+
+*** Responder ***                            buf[0] = sender_id buf[1::] = data
+tick()                                       push payload to ringbuf
+worker()                                      request_handler() -> await_send_response() -> await_transaction() -> allocate_promise() -> send()
+**/
+
 namespace osmium {
 
 class NodebusTransport {
 public:
   // --- Public Types ---
-  enum ResponseStatus {
+  enum TransactionStatus {
     OK = 0,
     TIMED_OUT,
-    REQUEST_OVERSIZED,
-    REQUEST_UNAVAILABLE,
+    DATA_OVERSIZED,
+    PROMISE_UNAVAILABLE,
   };
 
-  using RequestHandler = void (*)(uint8_t, const uint8_t *, size_t);
+  using RequestHandler = void (*)(uint8_t src, uint16_t id, const uint8_t *payload, size_t size);
 
   // --- Lifecycle ---
   NodebusTransport(Stream &stream, uint8_t id);
@@ -40,10 +59,17 @@ public:
   // Sync-safe wrapper over this->sender.send()
   void send(uint8_t dest, const uint8_t *payload, size_t payload_size);
 
+  TransactionStatus await_transaction(uint8_t dest, uint8_t meta_status, uint16_t transaction_id, uint8_t promise_id,
+                                      const uint8_t *packet, size_t packet_size,
+                                      uint8_t *recv, size_t recv_capacity, size_t *recv_size);
+
   // Suspends calling task until a response is received or times out.
   // Writes up to min(response_capacity, NODEBUS_PAYLOAD_MAX_SIZE) to response buffer.
-  ResponseStatus await_send_request(uint8_t dest, const uint8_t *request, size_t request_size, 
-                                    uint8_t *response, size_t response_capacity, size_t *response_size);
+  TransactionStatus await_send_request(uint8_t dest, const uint8_t *request, size_t request_size, 
+                                       uint8_t *response, size_t response_capacity, size_t *response_size);
+
+  // Suspends calling task until an ACK is received or times out.
+  TransactionStatus await_send_response(uint8_t dest, uint16_t request_id, const uint8_t *response, size_t response_size);
 
 private:
   // --- Task Constants ---
@@ -58,33 +84,39 @@ private:
   // --- Protocol Layouts ---
   static constexpr uint8_t VERSION_V1 = 0;
   static constexpr uint8_t META_STATUS_REQUEST = 0;
-  static constexpr uint8_t META_STATUS_RES_OK = 1;
+  static constexpr uint8_t META_STATUS_RESPONSE = 1;
+  static constexpr uint8_t META_STATUS_ACK = 2;
   // tells the sender to re-send the packet
-  static constexpr uint8_t META_STATUS_RES_RETRY = 2;
+  static constexpr uint8_t META_STATUS_RETRY = 3;
 
   static constexpr size_t MAX_REQUEST_RETRIES = 8;
   static constexpr uint32_t REQUEST_RETRY_DELAY_MS = 10;
 
-  struct Metadata {
+  struct __attribute__((packed)) Metadata {
     uint8_t version;
-    // status == 0   -> request
-    // status == 1   -> response_ok
-    // anything else -> error
     uint8_t status;
-    // bits 0-4  -> slot
-    // bits 5-15 -> generation
+    uint16_t transaction_id;
+    uint8_t promise_id; // used for indexing in the receiver 
+  };
+
+  struct TransactionPromise {
+    uint8_t status;
+    uint16_t transaction_id;
+    uint8_t data[NODEBUS_PAYLOAD_MAX_SIZE];
+    size_t data_size;
+    TaskHandle_t fut_waiter;
+    uint16_t generation = 0; // Incremented on allocation, encoded into transaction_id
+  };
+
+  struct QueuedRequest {
+    uint8_t sender;
     uint16_t request_id;
   };
 
-  struct ResponseFut {
-    uint8_t status;
-    uint8_t response[NODEBUS_PAYLOAD_MAX_SIZE];
-    size_t response_size;
-    TaskHandle_t waiter;
-    uint16_t generation = 0; // Incremented on allocation, encoded into request_id
-  };
-
   // --- Internal Task Execution ---
+  void tick_request(const Metadata &metadata, const uint8_t *payload, size_t payload_size);
+  void tick_response(const Metadata &metadata, const uint8_t *payload, size_t payload_size);
+  void tick_ack(const Metadata &metadata);
   void tick();
   static void task_tick(void *arg);
   
@@ -92,8 +124,8 @@ private:
   static void task_worker(void *arg);
 
   // --- Future Slot Management ---
-  size_t allocate_fut();
-  void free_fut(size_t id);
+  size_t allocate_promise();
+  void free_promise(size_t id);
 
   // --- Driver Dependencies ---
   Stream &stream;
@@ -101,8 +133,8 @@ private:
   Mutex<NodebusSender> sender;
 
   // --- Sync & Allocation State ---
-  Mutex<uint32_t> used_futs_mask = Mutex<uint32_t>(0);
-  ResponseFut response_futs[32];
+  Mutex<uint32_t> used_promises_mask = Mutex<uint32_t>(0);
+  TransactionPromise promises[32];
 
   // --- Application Worker Queue ---
   RingbufHandle_t request_queue;
