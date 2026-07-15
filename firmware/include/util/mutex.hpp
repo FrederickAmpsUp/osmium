@@ -20,6 +20,9 @@ public:
       xSemaphoreTake(this->mutex, portMAX_DELAY);
     }
 
+    Guard(const Guard &) = delete;
+    Guard &operator=(const Guard &) = delete;
+
     ~Guard() {
       xSemaphoreGive(this->mutex);
     }
