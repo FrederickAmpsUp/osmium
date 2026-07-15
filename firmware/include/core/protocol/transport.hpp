@@ -1,31 +1,12 @@
 #pragma once
 
-#include "drivers/nodebus.hpp"
+#include "nodebus.hpp"
 #include "nodebus_parser.hpp"
 #include "nodebus_sender.hpp"
 #include "util/mutex.hpp"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/ringbuf.h>
-
-// TODO: refactor await_send_request machinery to be more modular
-// so that it can be used for ACKs
-
-// what the hell
-
-/*** Transport Layer Block Diagram ***
-
-*** Requester ***
-
-await_send_request()           metadata.version=V1 .status=REQUEST                                                                                                                              
-await_transaction() -> allocate_promise() -> send() -> notifyTake() --------------------------------------------------------------------------------------------------------------------------- return
-
-tick()                                                                                                                                   retreive promise -> memcpy(promise.data) -> notifyGive
-
-*** Responder ***                            buf[0] = sender_id buf[1::] = data
-tick()                                       push payload to ringbuf
-worker()                                      request_handler() -> await_send_response() -> await_transaction() -> allocate_promise() -> send()
-**/
 
 namespace osmium {
 
@@ -96,7 +77,6 @@ private:
     uint8_t version;
     uint8_t status;
     uint16_t transaction_id;
-    uint8_t promise_id; // used for indexing in the receiver 
   };
 
   struct TransactionPromise {
@@ -126,6 +106,8 @@ private:
   // --- Future Slot Management ---
   size_t allocate_promise();
   void free_promise(size_t id);
+
+  size_t find_promise(uint16_t transaction_id);
 
   // --- Driver Dependencies ---
   Stream &stream;

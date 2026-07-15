@@ -1,5 +1,5 @@
-#include "drivers/transport.hpp"
-#include "drivers/nodebus.hpp"
+#include "core/protocol/transport.hpp"
+#include "core/protocol/nodebus.hpp"
 #include "logging/logger.hpp"
 #include "util/mutex.hpp"
 
@@ -70,6 +70,8 @@ NodebusTransport::TransactionStatus NodebusTransport::await_transaction(uint8_t 
   memcpy(data + sizeof(metadata), packet, packet_size);
  
   promise.fut_waiter = xTaskGetCurrentTaskHandle();
+  promise.transaction_id = transaction_id;
+
   promise.data_size = 0;
   promise.status = META_STATUS_RETRY;
  
@@ -94,7 +96,7 @@ NodebusTransport::TransactionStatus NodebusTransport::await_transaction(uint8_t 
     break;
 
   failed:
-    log.debug("Request failed, retrying after %d ms", REQUEST_RETRY_DELAY_MS);
+    log.debug("Transaction failed, retrying after %d ms", REQUEST_RETRY_DELAY_MS);
     vTaskDelay(pdMS_TO_TICKS(REQUEST_RETRY_DELAY_MS));
   }
 
@@ -117,6 +119,8 @@ NodebusTransport::TransactionStatus NodebusTransport::await_transaction(uint8_t 
 
 NodebusTransport::TransactionStatus NodebusTransport::await_send_request(uint8_t dest, const uint8_t *request, size_t request_size, 
                                                                          uint8_t *response, size_t response_capacity, size_t *response_size) {
+  static Logger &log = Logger::global();
+
   size_t promise_id = this->allocate_promise();
   if (promise_id == SIZE_MAX) return PROMISE_UNAVAILABLE;
 
@@ -128,9 +132,14 @@ NodebusTransport::TransactionStatus NodebusTransport::await_send_request(uint8_t
     return status;
   }
 
-    // if the ack fails ... whatever
-  (void)await_transaction(dest, META_STATUS_ACK, transaction_id, promise_id, nullptr, 0, nullptr, 0, nullptr);
-  this->free_promise(promise_id);
+  log.debug("sending ACK");
+ 
+  Metadata ack = {
+    .version = VERSION_V1,
+    .status = META_STATUS_ACK,
+    .transaction_id = transaction_id
+  };
+  this->send(dest, (uint8_t *)&ack, sizeof(ack));
   return OK;
 }
 
@@ -171,20 +180,17 @@ void NodebusTransport::tick_request(const Metadata &metadata, const uint8_t *pay
 void NodebusTransport::tick_response(const Metadata &metadata, const uint8_t *payload, size_t payload_size) {
     static Logger &log = Logger::global();
    
-    if (!(*this->used_promises_mask.lock() & 1 << metadata.promise_id)) {
-      log.warn("Received packet for slot %d but it is not filled.", metadata.promise_id);
+    size_t promise_id = this->find_promise(metadata.transaction_id);
+    if (promise_id == SIZE_MAX) {
+      log.warn("Could not find promise matching transaction ID 0x%04X.", metadata.transaction_id);
       return;
     }
 
-    TransactionPromise &promise = this->promises[metadata.promise_id];
-    if (promise.transaction_id != metadata.transaction_id) {
-      log.warn("Packet transaction ID did not match.");
-      return;
-    }
+    TransactionPromise &promise = this->promises[promise_id];
 
     TaskHandle_t task = promise.fut_waiter;
     if (!task) {
-      log.warn("Task in slot %d not set.", metadata.promise_id);
+      log.warn("Task in slot %d not set.", promise_id);
       return;
     }
 
@@ -198,21 +204,18 @@ void NodebusTransport::tick_response(const Metadata &metadata, const uint8_t *pa
 
 void NodebusTransport::tick_ack(const Metadata &metadata) {
     static Logger &log = Logger::global();
-   
-    if (!(*this->used_promises_mask.lock() & 1 << metadata.promise_id)) {
-      log.warn("Received packet for slot %d but it is not filled.", metadata.promise_id);
+  
+    size_t promise_id = this->find_promise(metadata.transaction_id);
+    if (promise_id == SIZE_MAX) {
+      log.warn("Could not find promise matching transaction ID 0x%04X.", metadata.transaction_id);
       return;
     }
 
-    TransactionPromise &promise = this->promises[metadata.promise_id];
-    if (promise.transaction_id != metadata.transaction_id) {
-      log.warn("Packet transaction ID did not match.");
-      return;
-    }
+    TransactionPromise &promise = this->promises[promise_id];
 
     TaskHandle_t task = promise.fut_waiter;
     if (!task) {
-      log.warn("Task in slot %d not set.", metadata.promise_id);
+      log.warn("Task in slot %d not set.", promise_id);
       return;
     }
 
@@ -316,6 +319,16 @@ size_t NodebusTransport::allocate_promise() {
 
 void NodebusTransport::free_promise(size_t id) {
   *this->used_promises_mask.lock() &= ~(1u << id);
+}
+
+size_t NodebusTransport::find_promise(uint16_t transaction_id) {
+  auto lock = this->used_promises_mask.lock();
+  for (size_t i = 0; i < 32; ++i) {
+    if (this->promises[i].transaction_id == transaction_id && (*lock & 1 << i))
+      return i;
+  }
+
+  return SIZE_MAX;
 }
 
 } // namespace osmium

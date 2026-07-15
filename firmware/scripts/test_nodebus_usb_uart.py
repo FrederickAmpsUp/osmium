@@ -3,7 +3,7 @@ import serial
 import time
 import threading
 
-SERIAL_PORT = "/dev/ttyUSB0"  # Adjust to your platform Target Port
+SERIAL_PORT = "/dev/ttyACM1"  # Adjust to your platform Target Port
 BAUD_RATE = 115200
 
 # Constants matching MCU header parameters
@@ -60,7 +60,7 @@ class TestNodebusParser(unittest.TestCase):
         self.ser.reset_output_buffer()
         time.sleep(0.1)
 
-    def send_and_listen(self, packet_bytes: bytes, listen_time: float = 0.5) -> list:
+    def send_and_listen(self, packet_bytes: bytes, listen_time: float = 0.2) -> list:
         """Sends raw bytes, prints out raw transmission data, and logs MCU responses."""
         print(f"\n[TX] Writing bytes: {packet_bytes.hex().upper()}")
         self.ser.write(packet_bytes)

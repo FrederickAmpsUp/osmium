@@ -1,5 +1,5 @@
-#include "drivers/nodebus_parser.hpp"
-#include "drivers/nodebus.hpp"
+#include "core/protocol/nodebus_parser.hpp"
+#include "core/protocol/nodebus.hpp"
 #include "logging/logger.hpp"
 
 namespace osmium {

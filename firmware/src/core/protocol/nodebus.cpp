@@ -1,4 +1,4 @@
-#include "drivers/nodebus.hpp"
+#include "core/protocol/nodebus.hpp"
 
 namespace osmium {
 

@@ -1,5 +1,5 @@
-#include "drivers/nodebus_sender.hpp"
-#include "drivers/nodebus.hpp"
+#include "core/protocol/nodebus_sender.hpp"
+#include "core/protocol/nodebus.hpp"
 
 namespace osmium {
 
