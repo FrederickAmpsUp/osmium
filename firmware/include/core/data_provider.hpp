@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cstdint>
+#include "util/mutex.hpp"
 
 namespace osmium {
 
@@ -17,8 +18,12 @@ public:
   };
 
   virtual const Metadata *get_metadata() const = 0;
-  // writes get_metadata().dsize bytes
-  virtual int sample(uint8_t *buffer) = 0;
+
+  virtual int sample() = 0;
+
+  // returned guard must be release as soon as the data is consumed.
+  // references to *Guard are invalidated once Guard goes out of scope
+  virtual Mutex<uint8_t *>::Guard lock_data() = 0;
 
   static constexpr int SAMPLE_OK = 0;
 
