@@ -2,4 +2,6 @@
 *.gbrjob
 *.drl
 *.zip
+*.step
+*pdf
 .history/
