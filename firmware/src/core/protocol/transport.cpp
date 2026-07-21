@@ -303,14 +303,14 @@ void NodebusTransport::task_worker(void *arg) {
 // --- Future Slot Management ---
 
 size_t NodebusTransport::allocate_promise() {
-  auto used_futs_mask = this->used_promises_mask.lock();
+  auto used_promises_mask = this->used_promises_mask.lock();
 
-  uint32_t free_mask = ~*used_futs_mask;
+  uint32_t free_mask = ~*used_promises_mask;
 
   if (!free_mask) return SIZE_MAX;
 
   int i = __builtin_ctz(free_mask);
-  *used_futs_mask |= (1u << i);
+  *used_promises_mask |= (1u << i);
 
   this->promises[i].generation++;
 
