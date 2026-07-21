@@ -323,7 +323,7 @@ void NodebusTransport::free_promise(size_t id) {
 
 size_t NodebusTransport::find_promise(uint16_t transaction_id) {
   auto lock = this->used_promises_mask.lock();
-  for (size_t i = 0; i < 32; ++i) {
+  for (size_t i = 0; i < sizeof(this->promises) / sizeof(this->promises[0]); ++i) {
     if (this->promises[i].transaction_id == transaction_id && (*lock & 1 << i))
       return i;
   }
