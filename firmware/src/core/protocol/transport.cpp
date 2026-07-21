@@ -13,7 +13,7 @@ NodebusTransport::NodebusTransport(Stream &stream, uint8_t id) : stream(stream),
     "NodebusTransport::task_tick",
     TICK_TASK_STACK_SIZE,
     this,
-    TICK_TASK_PRIORITY, &this->loop
+    TICK_TASK_PRIORITY, &this->hnd_tick
   );
 
   this->request_queue = xRingbufferCreate(REQUEST_QUEUE_SIZE, RINGBUF_TYPE_NOSPLIT);
@@ -23,7 +23,7 @@ NodebusTransport::NodebusTransport(Stream &stream, uint8_t id) : stream(stream),
     "NodebusTransport::task_worker",
     WORK_TASK_STACK_SIZE,
     this,
-    WORK_TASK_PRIORITY, &this->work
+    WORK_TASK_PRIORITY, &this->hnd_worker
   );
 }
 
@@ -55,6 +55,7 @@ NodebusTransport::TransactionStatus NodebusTransport::await_transaction(uint8_t 
   size_t data_size = packet_size + sizeof(Metadata);
 
   if (data_size > sizeof(data)) {
+    log->error("Packet was oversized");
     return DATA_OVERSIZED;
   }
 
@@ -66,12 +67,16 @@ NodebusTransport::TransactionStatus NodebusTransport::await_transaction(uint8_t 
     .transaction_id = transaction_id,
   };
 
+  // cpy metadata to data+0
   memcpy(data, &metadata, sizeof(metadata));
+  // cpy packet after metadata
   memcpy(data + sizeof(metadata), packet, packet_size);
- 
+
+  // fill in promise fields
   promise.fut_waiter = xTaskGetCurrentTaskHandle();
   promise.transaction_id = transaction_id;
 
+  // initialize to safe state
   promise.data_size = 0;
   promise.status = META_STATUS_RETRY;
  
@@ -84,13 +89,14 @@ NodebusTransport::TransactionStatus NodebusTransport::await_transaction(uint8_t 
       goto failed; // timed out, try next retry
     }
 
-    {
+    { // codeblock so we can jump past status initialization
       uint8_t status = promise.status;
 
       if (status == META_STATUS_RETRY) {
         goto failed; // peer requested a retry
       }
 
+      // RESPONSE or ACK
       success = (status <= META_STATUS_ACK);
     }
     break;
@@ -102,18 +108,21 @@ NodebusTransport::TransactionStatus NodebusTransport::await_transaction(uint8_t 
 
   if (success) {
     size_t n = std::min({
-        recv_capacity,
-        promise.data_size,
-        (size_t)NODEBUS_PAYLOAD_MAX_SIZE
+        recv_capacity,        // how much can we hold
+        promise.data_size,    // how much is there to copy
+        (size_t)NODEBUS_PAYLOAD_MAX_SIZE // how much does the protocol support
     });
 
+    // copy payload to receive buffer
     memcpy(recv, promise.data, n);
+    // report how many bytes were copied
     if (recv_size) *recv_size = n;
   }
 
   // prevents ghost immediate-unblocks if a packet arrived late
   ulTaskNotifyValueClear(nullptr, 0xFFFFFFFF);
 
+  // maybe a different status than TIMED_OUT is appropriate here
   return success ? OK : TIMED_OUT;
 }
 
@@ -124,21 +133,23 @@ NodebusTransport::TransactionStatus NodebusTransport::await_send_request(uint8_t
   size_t promise_id = this->allocate_promise();
   if (promise_id == SIZE_MAX) return PROMISE_UNAVAILABLE;
 
+  // generate a new transaction id
   uint16_t transaction_id = promise_id | (this->promises[promise_id].generation << 5);
 
+  // send, wait for response
   TransactionStatus status = await_transaction(dest, META_STATUS_REQUEST, transaction_id, promise_id, request, request_size, response, response_capacity, response_size);
+  this->free_promise(promise_id); // we are done with it here
   if (status != OK) {
-    this->free_promise(promise_id);
     return status;
   }
 
-  log.debug("sending ACK");
- 
+  // send an ACK with the same transcation id
   Metadata ack = {
     .version = VERSION_V1,
     .status = META_STATUS_ACK,
     .transaction_id = transaction_id
   };
+  // we don't use await_transaction because we don't care about a reply
   this->send(dest, (uint8_t *)&ack, sizeof(ack));
   return OK;
 }
@@ -147,6 +158,7 @@ NodebusTransport::TransactionStatus NodebusTransport::await_send_response(uint8_
   size_t promise_id = this->allocate_promise();
   if (promise_id == SIZE_MAX) return PROMISE_UNAVAILABLE;
 
+  // send, wait for ACK
   TransactionStatus status = await_transaction(dest, META_STATUS_RESPONSE, request_id, promise_id, response, response_size, nullptr, 0, nullptr);
   this->free_promise(promise_id);
   return status;
@@ -162,15 +174,19 @@ void NodebusTransport::tick_request(const Metadata &metadata, const uint8_t *pay
     .request_id = metadata.transaction_id
   };
 
+  // bytes remaining after metadata
   size_t req_size = payload_size - sizeof(metadata);
 
   void *item = nullptr;
+  // allocate (sizeof(queue_request) + req_size) bytes in the ringbuffer
   if (xRingbufferSendAcquire(this->request_queue, &item, sizeof(queued_request) + req_size, 0) != pdPASS) {
     log.error("Failed to allocate memory for request.");
     return;
   }
 
+  // copy the request info (sender, id) to the buffer
   memcpy(item, &queued_request, sizeof(queued_request));
+  // copy the payload after request info
   memcpy((uint8_t *)item + sizeof(queued_request), payload + sizeof(metadata), req_size);
   if (xRingbufferSendComplete(this->request_queue, item) != pdTRUE) {
     log.error("Failed to post request to ringbuffer.");
@@ -179,7 +195,7 @@ void NodebusTransport::tick_request(const Metadata &metadata, const uint8_t *pay
 
 void NodebusTransport::tick_response(const Metadata &metadata, const uint8_t *payload, size_t payload_size) {
     static Logger &log = Logger::global();
-   
+
     size_t promise_id = this->find_promise(metadata.transaction_id);
     if (promise_id == SIZE_MAX) {
       log.warn("Could not find promise matching transaction ID 0x%04X.", metadata.transaction_id);
@@ -194,11 +210,15 @@ void NodebusTransport::tick_response(const Metadata &metadata, const uint8_t *pa
       return;
     }
 
+    // forward response status
     promise.status = metadata.status;
 
+    // bytes remaining after metadata
     promise.data_size = payload_size - sizeof(metadata);
+    // copy response payload into promise buffer
     memcpy(promise.data, payload + sizeof(metadata), promise.data_size);
 
+    // wake the task
     xTaskNotifyGive(task);
 }
 
@@ -221,15 +241,17 @@ void NodebusTransport::tick_ack(const Metadata &metadata) {
 
     promise.status = metadata.status;
 
-    promise.data_size = 0;
+    promise.data_size = 0; // ACKs carry no data
 
+    // wake the task
     xTaskNotifyGive(task);
 }
 
 void NodebusTransport::tick() {
   static Logger &log = Logger::global();
 
-  if (this->parser.update(this->stream) <= 0) return; // nothing to parse
+  // if update > 0 we have a new packet available
+  if (this->parser.update(this->stream) <= 0) return;
 
   uint8_t payload_size = 0;
   const uint8_t *payload = this->parser.get_payload(&payload_size);
@@ -238,6 +260,8 @@ void NodebusTransport::tick() {
     log.debug("Packet contains no metadata");
     return;
   }
+
+  // copy metadata out of payload
   Metadata metadata;
   memcpy(&metadata, payload, sizeof(metadata));
 
@@ -256,7 +280,7 @@ void NodebusTransport::tick() {
     case META_STATUS_ACK:
       this->tick_ack(metadata);
     break;
-    default:
+    default: // nominally unreachable
       log.warn("Unknown metadata status.");
     break;
   }
@@ -270,6 +294,7 @@ void NodebusTransport::task_tick(void *arg) {
     vTaskDelay(pdMS_TO_TICKS(1)); // let the cpu breathe
   }
 
+  // let the destructor task know we have shut down
   xTaskNotifyGive(this_->shutdown_waiter);
   vTaskDelete(nullptr);
 }
@@ -296,6 +321,8 @@ void NodebusTransport::task_worker(void *arg) {
     this_->worker();
     vTaskDelay(pdMS_TO_TICKS(1));
   }
+
+  // let the destructor task know we have shut down
   xTaskNotifyGive(this_->shutdown_waiter);
   vTaskDelete(nullptr);
 }
@@ -303,13 +330,18 @@ void NodebusTransport::task_worker(void *arg) {
 // --- Future Slot Management ---
 
 size_t NodebusTransport::allocate_promise() {
+  // hold the mutex lock until this function exits
+  // prevents conflicting allocations
   auto used_promises_mask = this->used_promises_mask.lock();
 
   uint32_t free_mask = ~*used_promises_mask;
 
+  // no free slots
   if (!free_mask) return SIZE_MAX;
 
+  // gives the index of the first set bit in the mask
   int i = __builtin_ctz(free_mask);
+  // set the used bit
   *used_promises_mask |= (1u << i);
 
   this->promises[i].generation++;
@@ -318,11 +350,13 @@ size_t NodebusTransport::allocate_promise() {
 }
 
 void NodebusTransport::free_promise(size_t id) {
+  // clear the bit in the mask
   *this->used_promises_mask.lock() &= ~(1u << id);
 }
 
 size_t NodebusTransport::find_promise(uint16_t transaction_id) {
   auto lock = this->used_promises_mask.lock();
+  // basic linear-time search for (transaction_id matches) and (slot is filled)
   for (size_t i = 0; i < sizeof(this->promises) / sizeof(this->promises[0]); ++i) {
     if (this->promises[i].transaction_id == transaction_id && (*lock & 1 << i))
       return i;
