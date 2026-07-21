@@ -4,14 +4,32 @@
 
 namespace osmium {
 
-size_t DataMessage::serialize(uint8_t *buf, size_t max_size) {
+size_t DataRequestMessage::serialize(uint8_t *buf, size_t max_size) {
+  if (max_size < sizeof(this->data_provider_id)) return 0;
+
+  memcpy(buf, &this->data_provider_id, sizeof(this->data_provider_id));
+
+  return sizeof(this->data_provider_id);
+}
+
+bool DataRequestMessage::deserialize(DataRequestMessage *msg, uint8_t *buf, size_t buf_size) {
+  if (!msg) return false;
+
+  if (buf_size < sizeof(msg->data_provider_id)) return false;
+
+  memcpy(&msg->data_provider_id, buf, sizeof(msg->data_provider_id));
+
+  return true;
+}
+
+size_t DataResponseMessage::serialize(uint8_t *buf, size_t max_size) {
   if (max_size < this->size) return 0;
 
   memcpy(buf, this->data, this->size);
   return this->size;
 }
 
-bool DataMessage::deserialize(DataMessage *msg, uint8_t *buf, size_t buf_size) {
+bool DataResponseMessage::deserialize(DataResponseMessage *msg, uint8_t *buf, size_t buf_size) {
   if (!msg) return false;
   this->dynalloc = true;
 
@@ -25,7 +43,7 @@ bool DataMessage::deserialize(DataMessage *msg, uint8_t *buf, size_t buf_size) {
   return true;
 }
 
-void DataMessage::free() && {
+void DataResponseMessage::free() && {
   if (!this->dynalloc) return;
 
   if (this->data) ::free((void *)this->data);

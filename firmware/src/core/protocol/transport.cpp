@@ -55,7 +55,7 @@ NodebusTransport::TransactionStatus NodebusTransport::await_transaction(uint8_t 
   size_t data_size = packet_size + sizeof(Metadata);
 
   if (data_size > sizeof(data)) {
-    log->error("Packet was oversized");
+    log.error("Packet was oversized");
     return DATA_OVERSIZED;
   }
 

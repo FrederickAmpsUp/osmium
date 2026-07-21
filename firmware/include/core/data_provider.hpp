@@ -23,7 +23,7 @@ public:
 
   // returned guard must be release as soon as the data is consumed.
   // references to *Guard are invalidated once Guard goes out of scope
-  virtual Mutex<uint8_t *>::Guard lock_data() = 0;
+  virtual Mutex<const uint8_t *>::Guard lock_data() = 0;
 
   static constexpr int SAMPLE_OK = 0;
 

@@ -94,7 +94,7 @@ bool InitRequestMessage::deserialize(InitRequestMessage *msg, uint8_t *buf, size
   msg->blob = calloc(1, blob_size);
   if (!msg->blob) return false;
 
-  msg->data_providers = (DataProvider::Metadata **)msg->blob;
+  msg->data_providers = (const DataProvider::Metadata **)msg->blob;
   DataProvider::Metadata *metadatas =
       (DataProvider::Metadata *)(
           (uint8_t *)msg->blob +

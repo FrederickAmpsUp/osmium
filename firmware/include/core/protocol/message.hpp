@@ -41,7 +41,7 @@ struct InitRequestMessage {
   uint8_t id; // id == 0 -> requesting new id
 
   uint32_t num_data_providers = 0;
-  DataProvider::Metadata **data_providers = NULL;
+  const DataProvider::Metadata **data_providers = NULL;
 
   size_t serialize(uint8_t *buf, size_t max_size);
   bool deserialize(InitRequestMessage *msg, uint8_t *buf, size_t buf_size);
@@ -60,12 +60,21 @@ struct InitResponseMessage {
   void free() && {}
 };
 
-struct DataMessage {
+struct DataRequestMessage {
+  uint32_t data_provider_id;
+  
+  size_t serialize(uint8_t *buf, size_t max_size);
+  bool deserialize(DataRequestMessage *msg, uint8_t *buf, size_t buf_size);
+
+  void free() && {}
+};
+
+struct DataResponseMessage {
   size_t size = 0;
   uint8_t *data = NULL;
 
   size_t serialize(uint8_t *buf, size_t max_size);
-  bool deserialize(DataMessage *msg, uint8_t *buf, size_t buf_size);
+  bool deserialize(DataResponseMessage *msg, uint8_t *buf, size_t buf_size);
 
   void free() &&;
 private:
