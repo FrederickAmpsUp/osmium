@@ -11,6 +11,7 @@
 using namespace osmium;
 
 static constexpr uint8_t NODE_ID = 1;
+static constexpr uint8_t SLAVE_ID = 2;
 
 static constexpr int RX485 = 18;
 static constexpr int TX485 = 17;
@@ -109,5 +110,49 @@ void setup() {
 
 
 void loop() {
-    delay(10);
+    delay(100);
+    static Logger &log = Logger::global();
+
+    DataRequestMessage req = {
+      .data_provider_id = 0,
+    };
+
+    uint8_t buf[64];
+
+    size_t size = req.serialize(buf, sizeof(buf));
+
+    if (!size) {
+      log.error("Failed serializing DataRequest");
+      return;
+    }
+
+    uint8_t response_buf[32];
+    size_t response_size;
+
+    auto status = transport.await_send_request(
+      SLAVE_ID,
+      buf, size,
+      response_buf, sizeof(response_buf),
+      &response_size
+    );
+
+    if (status != NodebusTransport::OK) {
+      log.warn("Data request failed: %d", status);
+      return;
+    }
+
+    DataResponseMessage response;
+
+    if (!response.deserialize(
+      &response, response_buf, response_size
+    )) {
+      log.warn("Failed parsing DataResponse");
+      return;
+    }
+
+    // genuinely awful
+    log.info("Received data: %01x", response_buf[0]);
+
+    std::move(req).free();
+    std::move(response).free();
 }
