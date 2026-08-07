@@ -12,7 +12,7 @@ size_t DataRequestMessage::serialize(uint8_t *buf, size_t max_size) {
   return sizeof(this->data_provider_id);
 }
 
-bool DataRequestMessage::deserialize(DataRequestMessage *msg, uint8_t *buf, size_t buf_size) {
+bool DataRequestMessage::deserialize(DataRequestMessage *msg, const uint8_t *buf, size_t buf_size) {
   if (!msg) return false;
 
   if (buf_size < sizeof(msg->data_provider_id)) return false;
@@ -29,16 +29,16 @@ size_t DataResponseMessage::serialize(uint8_t *buf, size_t max_size) {
   return this->size;
 }
 
-bool DataResponseMessage::deserialize(DataResponseMessage *msg, uint8_t *buf, size_t buf_size) {
+bool DataResponseMessage::deserialize(DataResponseMessage *msg, const uint8_t *buf, size_t buf_size) {
   if (!msg) return false;
-  this->dynalloc = true;
+  msg->dynalloc = true;
 
-  this->size = buf_size;
+  msg->size = buf_size;
 
-  this->data = (uint8_t *)malloc(this->size);
-  if (!this->data) return false;
+  msg->data = (uint8_t *)malloc(msg->size);
+  if (!msg->data) return false;
 
-  memcpy(this->data, buf, this->size);
+  memcpy(msg->data, buf, msg->size);
 
   return true;
 }

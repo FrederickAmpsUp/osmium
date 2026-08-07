@@ -63,14 +63,14 @@ size_t InitRequestMessage::serialize(uint8_t *buf, size_t max_size) {
   return required_size;
 }
 
-bool InitRequestMessage::deserialize(InitRequestMessage *msg, uint8_t *buf, size_t buf_size) {
+bool InitRequestMessage::deserialize(InitRequestMessage *msg, const uint8_t *buf, size_t buf_size) {
   if (!msg) return false;
 
   size_t fixed_size = sizeof(msg->id) + sizeof(msg->num_data_providers);
   if (buf_size < fixed_size) return false;
 
-  uint8_t *ptr = buf;
-  uint8_t *const end = buf + buf_size;
+  const uint8_t *ptr = buf;
+  const uint8_t *const end = buf + buf_size;
 
 #define cpy(d, s) do { if ((size_t)(end-ptr) < s) {std::move(*msg).free(); return false;} \
                        memcpy(d, ptr, s); ptr += s; } while(0)
@@ -148,7 +148,7 @@ size_t InitResponseMessage::serialize(uint8_t *buf, size_t max_size) {
   return required_size;
 }
 
-bool InitResponseMessage::deserialize(InitResponseMessage *msg, uint8_t *buf, size_t buf_size) {
+bool InitResponseMessage::deserialize(InitResponseMessage *msg, const uint8_t *buf, size_t buf_size) {
   if (!msg) return false;
 
   if (buf_size != sizeof(msg->id)) return false;
