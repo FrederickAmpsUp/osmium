@@ -99,7 +99,9 @@ void setup_master() {
 }
 
 void loop_master() {
+  // TODO: request data, forward to webui through ws
 
+  delay(10);
 }
 
 } // namespace osmium
