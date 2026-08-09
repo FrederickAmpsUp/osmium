@@ -1,5 +1,9 @@
 {
   "appId": "com.frederickampsup.osmium",
   "appName": "osmium",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http",
+    "iosScheme": "http"
+  }
 }

@@ -1,0 +1,28 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none"
+     xmlns="http://www.w3.org/2000/svg">
+  <!-- Sensor trace -->
+  <path
+    d="M26 64H40L47 48L56 80L65 55L73 70"
+    stroke="#FF8A3D"
+    stroke-width="7"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Osmium "O" -->
+  <circle
+    cx="64"
+    cy="64"
+    r="38"
+    stroke="#EEEEEE"
+    stroke-width="10"
+  />
+
+  <path
+    d="M73 70H100"
+    stroke="#FF8A3D"
+    stroke-width="7"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

@@ -1,0 +1,111 @@
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/600.css";
+
+:root {
+  --primary-fg: #eeeeee;
+  --secondary-fg: #ff8a3d;
+
+  --primary-bg: #151515;
+  --secondary-bg: #202833;
+
+  --font-ui: Inter, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  --space: 8px;
+}
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--primary-bg);
+  color: var(--primary-fg);
+
+  font-family: var(--font-ui);
+}
+
+.top-bar {
+  background-color: var(--secondary-bg);
+  color: var(--primary-fg);
+
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+
+  height: 3em;
+
+  padding-left: var(--space);
+  padding-right: var(--space);
+}
+
+h1 {
+  margin: 0;
+
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+h1 > img {
+  height: 1.5em;
+}
+
+#connectivity {
+  margin-left: auto;
+
+  font-family: var(--font-mono);
+  color: var(--secondary-fg);
+}
+
+.border {
+  border-style: solid;
+  border-color: var(--primary-fg);
+  border-width: 2px;
+  border-radius: var(--space);
+}
+
+.flex-vertical {
+  display: flex;
+  flex-direction: vertical;
+}
+
+.page-content {
+  min-height: calc(100vh - 3em);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.moisture-card {
+  container-type: inline-size;
+  width: 90vw;
+  aspect-ratio: 3 / 2;
+
+  overflow: hidden;
+}
+
+.moisture-value {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  font-family: var(--font-mono);
+  font-size: clamp(3rem, 12vw, 7rem);
+  font-weight: 400;
+  color: var(--secondary-fg);
+
+  font-size: 15cqh;
+}
+
+.moisture-value .unit {
+  font-size: 0.45em;
+  margin-left: 0.15em;
+}

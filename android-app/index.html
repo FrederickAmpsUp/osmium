@@ -4,9 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Osmium</title>
+
+    <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+    <link rel="stylesheet" href="css/style.css">
   </head>
   <body>
-    <h1>Osmium</h1>
-    <p>Hello from Android</p>
+    <div class="top-bar">
+      <h1><img src="assets/logo.svg" alt="Osmium">Osmium</h1>
+      <span id="connectivity">Disconnected</span>
+    </div>
+    <div class="page-content">
+      <div class="border moisture-card">
+        <div class="top-bar">
+          <h1>Moisture</h1>
+        </div>
+
+        <div class="moisture-value">
+          <span id="moisture">63.4</span>
+          <span class="unit">%</span>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/js/index.ts"></script>
   </body>
 </html>
